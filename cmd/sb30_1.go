@@ -126,6 +126,7 @@ func (u *User) JSONLoad(b []byte) error {
 // Business logic
 type application struct {
 	list Database
+	l    *Logic
 
 	infoLog  *log.Logger
 	errorLog *log.Logger
@@ -204,25 +205,16 @@ func (app *application) deleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	usr, err := app.list.Search(delUser.Id)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		app.errorLog.Println(err)
-		return
-	}
-	user := usr.(*User)
-	err = app.list.Delete(delUser.Id)
+	userName, err := app.l.DeleteUser(delUser.Id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		app.errorLog.Println(err)
 		return
 	}
 
-	// TODO :: delete in friends
-
-	app.infoLog.Println("delete user:", delUser.Id, user.Name)
+	app.infoLog.Println("delete user:", userName)
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(user.Name))
+	w.Write([]byte(userName))
 }
 
 // GET show all friends
@@ -260,28 +252,14 @@ func (app *application) friends(w http.ResponseWriter, r *http.Request) {
 		app.errorLog.Println(err)
 		return
 	}
-	usr, err := app.list.Search(id)
+
+	out, err := app.l.FriendsList(id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		app.errorLog.Println(err)
 		return
 	}
-	user := usr.(*User)
-
-	out := "Список друзей " + user.Name + ":\n"
-	app.infoLog.Print(out)
-
-	if len(user.Friends) > 0 {
-		for _, val := range user.Friends {
-			u, err := app.list.Search(strconv.FormatInt(int64(val), 10))
-			if err == nil {
-				uu := u.(*User)
-				out += "\tName: " + uu.Name + "\tAge: " + uu.Age + "\n"
-			}
-		}
-	} else {
-		out += "\t<< ПУСТО >>\n"
-	}
+	app.infoLog.Println(out)
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(out))
@@ -322,17 +300,12 @@ func (app *application) home(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	usr, err := app.list.Search(id)
+	err = app.l.ChangeUserAge(id, newage.NewAge)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		app.errorLog.Println(err)
 		return
 	}
-	user := usr.(*User)
-
-	// TODO :: update AGE
-
-	user.Age = newage.NewAge
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("возраст пользователя успешно обновлён"))
@@ -365,29 +338,118 @@ func (app *application) makeFriends(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	susr, err := app.list.Search(friend.Sid)
+	info, err := app.l.MakeUsersFrends(friend.Sid, friend.Tid)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		app.errorLog.Println(err)
 		return
 	}
-	suser := susr.(*User)
-	tusr, err := app.list.Search(friend.Tid)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		app.errorLog.Println(err)
-		return
-	}
-	tuser := tusr.(*User)
-
-	// TODO :: make friend
-
-	app.infoLog.Printf("%s и %s теперь друзья", suser.Name, tuser.Name)
+	app.infoLog.Printf(info)
 
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(fmt.Sprintf("%s и %s теперь друзья", suser.Name, tuser.Name)))
+	w.Write([]byte(info))
 }
 
+// Business logic
+type Logic struct {
+	ds Database
+}
+
+func NewLogic(aDs Database) *Logic {
+	return &Logic{ds: aDs}
+}
+
+func (l *Logic) AddUser() error {
+	return nil
+}
+
+func (l *Logic) DeleteUser(id string) (string, error) {
+	usr, err := l.ds.Search(id)
+	if err != nil {
+		return "", err
+	}
+	user := usr.(*User)
+	name := user.Name
+
+	if len(user.Friends) > 0 {
+		for _, val := range user.Friends {
+			u, err := l.ds.Search(strconv.FormatInt(int64(val), 10))
+			if err == nil {
+				if uu, ok := u.(*User); ok {
+					index := -1
+					for idx, v := range uu.Friends {
+						if v == user.id {
+							index = idx
+							break
+						}
+					}
+					if index > 0 {
+						uu.Friends = append(uu.Friends[:index], uu.Friends[index+1:]...)
+					}
+				}
+			}
+		}
+	}
+	err = l.ds.Delete(id)
+	return name, err
+}
+
+func (l *Logic) FriendsList(id string) (string, error) {
+	usr, err := l.ds.Search(id)
+	if err != nil {
+		return "", err
+	}
+	user := usr.(*User)
+
+	out := "Список друзей " + user.Name + ":\n"
+
+	if len(user.Friends) > 0 {
+		for _, val := range user.Friends {
+			u, err := l.ds.Search(strconv.FormatInt(int64(val), 10))
+			if err == nil {
+				uu := u.(*User)
+				out += "\tName: " + uu.Name + "\tAge: " + uu.Age + "\n"
+			}
+		}
+	} else {
+		out += "\t<< ПУСТО >>\n"
+	}
+	return out, nil
+}
+
+func (l *Logic) ChangeUserAge(id, age string) error {
+	usr, err := l.ds.Search(id)
+	if err != nil {
+		return err
+	}
+	user := usr.(*User)
+	user.Age = age
+	return nil
+}
+
+func (l *Logic) MakeUsersFrends(sid, tid string) (string, error) {
+	susr, err := l.ds.Search(sid)
+	if err != nil {
+		return "", err
+	}
+	suser := susr.(*User)
+	tusr, err := l.ds.Search(tid)
+	if err != nil {
+		return "", err
+	}
+	tuser := tusr.(*User)
+	for _, val := range suser.Friends {
+		// Already friends
+		if val == tuser.id {
+			return "", fmt.Errorf("%s and %s already friends", suser.Name, tuser.Name)
+		}
+	}
+	suser.Friends = append(suser.Friends, tuser.id)
+	tuser.Friends = append(tuser.Friends, suser.id)
+	return fmt.Sprintf("%s и %s теперь друзья", suser.Name, tuser.Name), nil
+}
+
+// Entry point
 func main() {
 	addr := ":4000"
 
@@ -396,6 +458,7 @@ func main() {
 
 	app := &application{
 		list:     NewUserArray(),
+		l:        NewLogic(NewUserArray()),
 		infoLog:  infoLog,
 		errorLog: errorLog,
 	}
