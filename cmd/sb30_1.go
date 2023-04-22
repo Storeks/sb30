@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,8 +10,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Database interface {
@@ -410,6 +413,20 @@ func main() {
 		ErrorLog: errorLog,
 		Handler:  mux,
 	}
-	err := srv.ListenAndServe()
-	errorLog.Fatal(err)
+	go func() {
+		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+			errorLog.Fatal(err)
+		}
+	}()
+
+	// Ctrl-C for canceled server work
+	cancelChan := make(chan os.Signal, 1)
+	signal.Notify(cancelChan, os.Interrupt)
+	<-cancelChan
+
+	infoLog.Println("Server shutdown ...")
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	srv.Shutdown(ctx)
+
 }
