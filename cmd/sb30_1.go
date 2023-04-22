@@ -265,10 +265,23 @@ func (app *application) friends(w http.ResponseWriter, r *http.Request) {
 	}
 	user := usr.(*User)
 
-	// TODO :: Вывести всех друзей
+	out := "Список друзей " + user.Name + ":\n"
+	app.infoLog.Print(out)
+
+	if len(user.Friends) > 0 {
+		for _, val := range user.Friends {
+			u, err := app.list.Search(strconv.FormatInt(int64(val), 10))
+			if err == nil {
+				uu := u.(*User)
+				out += "\tName: " + uu.Name + "\tAge: " + uu.Age + "\n"
+			}
+		}
+	} else {
+		out += "\t<< ПУСТО >>\n"
+	}
 
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(user.Name))
+	w.Write([]byte(out))
 }
 
 // PUT Change Age

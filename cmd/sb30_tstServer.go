@@ -38,6 +38,23 @@ func main() {
 	Post(User{"Lyto By", "17", []int{4, 2}})
 	fmt.Println("------------------[POST")
 	Post(User{"Konnon Varvar", "25", []int{}})
+	fmt.Println("------------------[GET FR")
+	GetFrieds("3")
+}
+
+func GetFrieds(userId string) {
+	resp, err := http.Get(sURL + "/friends/" + userId)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer resp.Body.Close()
+	fmt.Println("Status:", resp.Status)
+	fmt.Println(resp.Header.Get("Content-Type"))
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("%+v\n", string(data))
 }
 
 func Post(u User) {
