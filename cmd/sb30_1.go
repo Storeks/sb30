@@ -20,6 +20,7 @@ type Database interface {
 	Add(Record) (int, error)
 	Delete(string) error
 	Search(string) (Record, error)
+	Map(func(Record))
 }
 
 type Record interface {
@@ -91,6 +92,14 @@ func (ul *UserArray) Search(sid string) (Record, error) {
 	return nil, fmt.Errorf("user with id: %d not found", id)
 }
 
+func (ul *UserArray) Map(f func(Record)) {
+	for _, val := range ul.users {
+		if !val.isDel {
+			f(val)
+		}
+	}
+}
+
 func NewUserArray() *UserArray {
 	return &UserArray{users: make([]*User, 0, 10)}
 }
@@ -125,8 +134,7 @@ func (u *User) JSONLoad(b []byte) error {
 
 // Business logic
 type application struct {
-	list Database
-	l    *Logic
+	l *Logic
 
 	infoLog  *log.Logger
 	errorLog *log.Logger
@@ -157,7 +165,7 @@ func (app *application) createUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	app.infoLog.Println(usr)
-	id, err := app.list.Add(usr)
+	id, err := app.l.AddUser(usr)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		app.errorLog.Println(err)
@@ -350,6 +358,27 @@ func (app *application) makeFriends(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(info))
 }
 
+// GET show all users for test
+func (app *application) showAll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "Метод запрещен!", 405)
+		app.errorLog.Println("метод запрещен")
+		return
+	}
+
+	out, err := app.l.ShowAllUsers()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		app.errorLog.Println(err)
+		return
+	}
+	app.infoLog.Println(out)
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(out))
+}
+
 // Business logic
 type Logic struct {
 	ds Database
@@ -359,8 +388,8 @@ func NewLogic(aDs Database) *Logic {
 	return &Logic{ds: aDs}
 }
 
-func (l *Logic) AddUser() error {
-	return nil
+func (l *Logic) AddUser(u *User) (int, error) {
+	return l.ds.Add(u)
 }
 
 func (l *Logic) DeleteUser(id string) (string, error) {
@@ -449,6 +478,15 @@ func (l *Logic) MakeUsersFrends(sid, tid string) (string, error) {
 	return fmt.Sprintf("%s и %s теперь друзья", suser.Name, tuser.Name), nil
 }
 
+func (l *Logic) ShowAllUsers() (string, error) {
+	out := "Список пользователей:\n"
+	l.ds.Map(func(r Record) {
+		u := r.(*User)
+		out += fmt.Sprintln(u)
+	})
+	return out, nil
+}
+
 // Entry point
 func main() {
 	addr := ":4000"
@@ -457,7 +495,6 @@ func main() {
 	errorLog := log.New(os.Stderr, "ERROR\t", log.Ldate|log.Ltime|log.Lshortfile)
 
 	app := &application{
-		list:     NewUserArray(),
 		l:        NewLogic(NewUserArray()),
 		infoLog:  infoLog,
 		errorLog: errorLog,
@@ -469,6 +506,7 @@ func main() {
 	mux.HandleFunc("/create", app.createUser)
 	mux.HandleFunc("/delete", app.deleteUser)
 	mux.HandleFunc("/make_friends", app.makeFriends)
+	mux.HandleFunc("/show", app.showAll)
 
 	infoLog.Println("Запуск веб-сервера на http://127.0.0.1:4000")
 	srv := &http.Server{
