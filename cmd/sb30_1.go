@@ -4,17 +4,17 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"github.com/storeks/sb30/internal/database"
-	"github.com/storeks/sb30/internal/logic"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/storeks/sb30/internal/database"
+	"github.com/storeks/sb30/internal/logic"
 )
 
 // Business logic
@@ -27,16 +27,16 @@ type application struct {
 
 // POST request For Create User
 func (app *application) createUser(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "Метод запрещен!", 405)
-		app.errorLog.Println("метод запрещен")
-		return
-	}
+	// if r.Method != http.MethodPost {
+	// 	w.Header().Set("Allow", http.MethodPost)
+	// 	http.Error(w, "Метод запрещен!", 405)
+	// 	app.errorLog.Println("метод запрещен")
+	// 	return
+	// }
 
 	content, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusNotFound)
 		app.errorLog.Println(err)
 		return
 	}
@@ -52,7 +52,7 @@ func (app *application) createUser(w http.ResponseWriter, r *http.Request) {
 	app.infoLog.Println(usr)
 	id, err := app.l.AddUser(usr)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusNotFound)
 		app.errorLog.Println(err)
 		return
 	}
@@ -74,16 +74,16 @@ func (app *application) createUser(w http.ResponseWriter, r *http.Request) {
 
 // DELETE request for delete User
 func (app *application) deleteUser(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete {
-		w.Header().Set("Allow", http.MethodDelete)
-		http.Error(w, "Метод запрещен!", 405)
-		app.errorLog.Println("метод запрещен")
-		return
-	}
+	// if r.Method != http.MethodDelete {
+	// 	w.Header().Set("Allow", http.MethodDelete)
+	// 	http.Error(w, "Метод запрещен!", 405)
+	// 	app.errorLog.Println("метод запрещен")
+	// 	return
+	// }
 
 	content, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusNotFound)
 		app.errorLog.Println(err)
 		return
 	}
@@ -100,7 +100,7 @@ func (app *application) deleteUser(w http.ResponseWriter, r *http.Request) {
 
 	userName, err := app.l.DeleteUser(delUser.Id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusNotFound)
 		app.errorLog.Println(err)
 		return
 	}
@@ -112,43 +112,44 @@ func (app *application) deleteUser(w http.ResponseWriter, r *http.Request) {
 
 // GET show all friends
 func (app *application) friends(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, "Метод запрещен!", 405)
-		app.errorLog.Println("метод запрещен")
-		return
-	}
-
-	var (
-		id  string
-		err error
-	)
-	s := strings.Split(strings.ToLower(r.URL.Path), "/")
-	idx := -1
-	for i, val := range s {
-		if val == "friends" {
-			idx = i + 1
-			break
-		}
-	}
-	if idx > 0 && len(s) > idx {
-		id = s[idx]
-		// id, err = strconv.Atoi(s[idx])
-		// if err != nil {
-		// 	http.Error(w, err.Error(), http.StatusInternalServerError)
-		// 	app.errorLog.Println(err)
-		// 	return
-		// }
-	} else {
-		err = errors.New("id not found")
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		app.errorLog.Println(err)
-		return
-	}
+	// if r.Method != http.MethodGet {
+	// 	w.Header().Set("Allow", http.MethodGet)
+	// 	http.Error(w, "Метод запрещен!", 405)
+	// 	app.errorLog.Println("метод запрещен")
+	// 	return
+	// }
+	//
+	// var (
+	// 	id  string
+	// 	err error
+	// )
+	// s := strings.Split(strings.ToLower(r.URL.Path), "/")
+	// idx := -1
+	// for i, val := range s {
+	// 	if val == "friends" {
+	// 		idx = i + 1
+	// 		break
+	// 	}
+	// }
+	// if idx > 0 && len(s) > idx {
+	// 	id = s[idx]
+	// 	// id, err = strconv.Atoi(s[idx])
+	// 	// if err != nil {
+	// 	// 	http.Error(w, err.Error(), http.StatusNotFound)
+	// 	// 	app.errorLog.Println(err)
+	// 	// 	return
+	// 	// }
+	// } else {
+	// 	err = errors.New("id not found")
+	// 	http.Error(w, err.Error(), http.StatusNotFound)
+	// 	app.errorLog.Println(err)
+	// 	return
+	// }
+	id := chi.URLParam(r, "idUser")
 
 	out, err := app.l.FriendsList(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusNotFound)
 		app.errorLog.Println(err)
 		return
 	}
@@ -160,25 +161,27 @@ func (app *application) friends(w http.ResponseWriter, r *http.Request) {
 
 // PUT Change Age
 func (app *application) home(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPut {
-		w.Header().Set("Allow", http.MethodPut)
-		http.Error(w, "Метод запрещен!", 405)
-		app.errorLog.Println("метод запрещен")
-		return
-	}
-
-	s := strings.Split(strings.ToLower(r.URL.Path), "/")
-	id := s[1]
+	// if r.Method != http.MethodPut {
+	// 	w.Header().Set("Allow", http.MethodPut)
+	// 	http.Error(w, "Метод запрещен!", 405)
+	// 	app.errorLog.Println("метод запрещен")
+	// 	return
+	// }
+	//
+	// s := strings.Split(strings.ToLower(r.URL.Path), "/")
+	// id := s[1]
 	// id, err := strconv.Atoi(s[1])
 	// if err != nil {
-	// 	http.Error(w, err.Error(), http.StatusInternalServerError)
+	// 	http.Error(w, err.Error(), http.StatusNotFound)
 	// 	app.errorLog.Println(err)
 	// 	return
 	// }
 
+	id := chi.URLParam(r, "idUser")
+
 	content, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusNotFound)
 		app.errorLog.Println(err)
 		return
 	}
@@ -195,7 +198,7 @@ func (app *application) home(w http.ResponseWriter, r *http.Request) {
 
 	err = app.l.ChangeUserAge(id, newage.NewAge)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusNotFound)
 		app.errorLog.Println(err)
 		return
 	}
@@ -206,16 +209,16 @@ func (app *application) home(w http.ResponseWriter, r *http.Request) {
 
 // POST link two users as friend
 func (app *application) makeFriends(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "Метод запрещен!", 405)
-		app.errorLog.Println("метод запрещен")
-		return
-	}
+	// if r.Method != http.MethodPost {
+	// 	w.Header().Set("Allow", http.MethodPost)
+	// 	http.Error(w, "Метод запрещен!", 405)
+	// 	app.errorLog.Println("метод запрещен")
+	// 	return
+	// }
 
 	content, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusNotFound)
 		app.errorLog.Println(err)
 		return
 	}
@@ -233,7 +236,7 @@ func (app *application) makeFriends(w http.ResponseWriter, r *http.Request) {
 
 	info, err := app.l.MakeUsersFrends(friend.Sid, friend.Tid)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusNotFound)
 		app.errorLog.Println(err)
 		return
 	}
@@ -245,16 +248,16 @@ func (app *application) makeFriends(w http.ResponseWriter, r *http.Request) {
 
 // GET show all users for test
 func (app *application) showAll(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, "Метод запрещен!", 405)
-		app.errorLog.Println("метод запрещен")
-		return
-	}
+	// if r.Method != http.MethodGet {
+	// 	w.Header().Set("Allow", http.MethodGet)
+	// 	http.Error(w, "Метод запрещен!", 405)
+	// 	app.errorLog.Println("метод запрещен")
+	// 	return
+	// }
 
 	out, err := app.l.ShowAllUsers()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusNotFound)
 		app.errorLog.Println(err)
 		return
 	}
@@ -277,20 +280,29 @@ func main() {
 		errorLog: errorLog,
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", app.home)
-	mux.HandleFunc("/friends/", app.friends)
-	mux.HandleFunc("/create", app.createUser)
-	mux.HandleFunc("/delete", app.deleteUser)
-	mux.HandleFunc("/make_friends", app.makeFriends)
-	mux.HandleFunc("/show", app.showAll)
+	rout := chi.NewRouter()
+	rout.Get("/show", app.showAll)
+	rout.Put("/{idUser}", app.home)
+	rout.Delete("/delete", app.deleteUser)
+	rout.Post("/make_friends", app.makeFriends)
+	rout.Post("/create", app.createUser)
+	rout.Get("/friends/{idUser}", app.friends)
+
+	// mux := http.NewServeMux()
+	// mux.HandleFunc("/", app.home)
+	// mux.HandleFunc("/friends/", app.friends)
+	// mux.HandleFunc("/create", app.createUser)
+	// mux.HandleFunc("/delete", app.deleteUser)
+	// mux.HandleFunc("/make_friends", app.makeFriends)
+	// mux.HandleFunc("/show", app.showAll)
 
 	infoLog.Println("Запуск веб-сервера на http://127.0.0.1:4000")
 	srv := &http.Server{
 		Addr:     addr,
 		ErrorLog: errorLog,
-		Handler:  mux,
+		Handler:  rout, //mux,
 	}
+
 	go func() {
 		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 			errorLog.Fatal(err)
