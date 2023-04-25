@@ -5,7 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"github.com/storeks/sb30/internal/database"
+	"github.com/storeks/sb30/internal/logic"
 	"io"
 	"log"
 	"net/http"
@@ -16,125 +17,9 @@ import (
 	"time"
 )
 
-type Database interface {
-	Add(Record) (int, error)
-	Delete(string) error
-	Search(string) (Record, error)
-	Map(func(Record))
-}
-
-type Record interface {
-	JSONLoad([]byte) error
-}
-
-// Users storage in memory.
-type UserArray struct {
-	delpos int
-	users  []*User
-}
-
-// Add() append user based on deleted position
-func (ul *UserArray) Add(r Record) (int, error) {
-	var k int
-	u, ok := r.(*User)
-	if !ok {
-		return 0, fmt.Errorf("unexpected type for %v", u)
-	}
-	if ul.delpos > 0 {
-		pos := ul.delpos - 1
-		next := ul.users[pos].id
-		u.id = ul.delpos
-		u.isDel = false
-		ul.users[pos] = u
-		ul.delpos = next
-		k = u.id
-	} else {
-		ul.users = append(ul.users, u)
-		k = len(ul.users)
-		ul.users[k-1].id = k
-	}
-	return k, nil
-}
-
-// Delete() find record via id and marks it as deleted
-func (ul *UserArray) Delete(sid string) error {
-	id, err := strconv.Atoi(sid)
-	if err != nil {
-		return err
-	}
-	if id < 1 || id > len(ul.users) {
-		return errors.New("record not found")
-	}
-	pos := id - 1
-	if ul.users[pos].isDel {
-		return errors.New("record allready delete")
-	}
-	ul.users[pos].isDel = true
-	ul.users[pos].id = ul.delpos
-	ul.delpos = id
-	// fmt.Println(ul.users[pos].id, ul.delpos)
-	return nil
-}
-
-func (ul *UserArray) Search(sid string) (Record, error) {
-	id, err := strconv.Atoi(sid)
-	if err != nil {
-		return nil, err
-	}
-	for _, val := range ul.users {
-		if val.isDel {
-			continue
-		}
-		if val.id == id {
-			return val, nil
-		}
-	}
-	return nil, fmt.Errorf("user with id: %d not found", id)
-}
-
-func (ul *UserArray) Map(f func(Record)) {
-	for _, val := range ul.users {
-		if !val.isDel {
-			f(val)
-		}
-	}
-}
-
-func NewUserArray() *UserArray {
-	return &UserArray{users: make([]*User, 0, 10)}
-}
-
-type User struct {
-	isDel   bool   //`json:"-"`
-	id      int    //`json:"id"`
-	Name    string `json:"name"`
-	Age     string `json:"age"`
-	Friends []int  `json:"friends"`
-}
-
-func NewUser(aName string, aAge int) *User {
-	return &User{
-		Name:    aName,
-		Age:     strconv.FormatInt(int64(aAge), 10),
-		Friends: make([]int, 0),
-	}
-}
-
-func NewEmptyUser() *User {
-	return &User{
-		Friends: make([]int, 0),
-	}
-}
-
-// JSONLoad() prepare User record from json
-func (u *User) JSONLoad(b []byte) error {
-	err := json.Unmarshal(b, u)
-	return err
-}
-
 // Business logic
 type application struct {
-	l *Logic
+	l *logic.Logic
 
 	infoLog  *log.Logger
 	errorLog *log.Logger
@@ -156,7 +41,7 @@ func (app *application) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	usr := NewEmptyUser()
+	usr := database.NewEmptyUser()
 	err = usr.JSONLoad(content)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -379,114 +264,6 @@ func (app *application) showAll(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(out))
 }
 
-// Business logic
-type Logic struct {
-	ds Database
-}
-
-func NewLogic(aDs Database) *Logic {
-	return &Logic{ds: aDs}
-}
-
-func (l *Logic) AddUser(u *User) (int, error) {
-	return l.ds.Add(u)
-}
-
-func (l *Logic) DeleteUser(id string) (string, error) {
-	usr, err := l.ds.Search(id)
-	if err != nil {
-		return "", err
-	}
-	user := usr.(*User)
-	name := user.Name
-
-	if len(user.Friends) > 0 {
-		for _, val := range user.Friends {
-			u, err := l.ds.Search(strconv.FormatInt(int64(val), 10))
-			if err == nil {
-				if uu, ok := u.(*User); ok {
-					index := -1
-					for idx, v := range uu.Friends {
-						if v == user.id {
-							index = idx
-							break
-						}
-					}
-					if index > 0 {
-						uu.Friends = append(uu.Friends[:index], uu.Friends[index+1:]...)
-					}
-				}
-			}
-		}
-	}
-	err = l.ds.Delete(id)
-	return name, err
-}
-
-func (l *Logic) FriendsList(id string) (string, error) {
-	usr, err := l.ds.Search(id)
-	if err != nil {
-		return "", err
-	}
-	user := usr.(*User)
-
-	out := "Список друзей " + user.Name + ":\n"
-
-	if len(user.Friends) > 0 {
-		for _, val := range user.Friends {
-			u, err := l.ds.Search(strconv.FormatInt(int64(val), 10))
-			if err == nil {
-				uu := u.(*User)
-				out += "\tName: " + uu.Name + "\tAge: " + uu.Age + "\n"
-			}
-		}
-	} else {
-		out += "\t<< ПУСТО >>\n"
-	}
-	return out, nil
-}
-
-func (l *Logic) ChangeUserAge(id, age string) error {
-	usr, err := l.ds.Search(id)
-	if err != nil {
-		return err
-	}
-	user := usr.(*User)
-	user.Age = age
-	return nil
-}
-
-func (l *Logic) MakeUsersFrends(sid, tid string) (string, error) {
-	susr, err := l.ds.Search(sid)
-	if err != nil {
-		return "", err
-	}
-	suser := susr.(*User)
-	tusr, err := l.ds.Search(tid)
-	if err != nil {
-		return "", err
-	}
-	tuser := tusr.(*User)
-	for _, val := range suser.Friends {
-		// Already friends
-		if val == tuser.id {
-			return "", fmt.Errorf("%s and %s already friends", suser.Name, tuser.Name)
-		}
-	}
-	suser.Friends = append(suser.Friends, tuser.id)
-	tuser.Friends = append(tuser.Friends, suser.id)
-	return fmt.Sprintf("%s и %s теперь друзья", suser.Name, tuser.Name), nil
-}
-
-func (l *Logic) ShowAllUsers() (string, error) {
-	out := "Список пользователей:\n"
-	l.ds.Map(func(r Record) {
-		u := r.(*User)
-		out += fmt.Sprintln(u)
-	})
-	return out, nil
-}
-
 // Entry point
 func main() {
 	addr := ":4000"
@@ -495,7 +272,7 @@ func main() {
 	errorLog := log.New(os.Stderr, "ERROR\t", log.Ldate|log.Ltime|log.Lshortfile)
 
 	app := &application{
-		l:        NewLogic(NewUserArray()),
+		l:        logic.NewLogic(database.NewUserArray()),
 		infoLog:  infoLog,
 		errorLog: errorLog,
 	}
